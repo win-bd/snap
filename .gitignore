@@ -1,0 +1,84 @@
+# Visual Studio solution and project files
+*.sln.docstates
+*.suo
+*.user
+*.userprefs
+
+# Build outputs
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+build/
+bin/
+obj/
+*.exe
+*.dll
+*.lib
+*.obj
+*.pdb
+*.ilk
+*.idb
+*.tlog
+*.log
+*.res
+*.pch
+*.ipch/
+*.aps
+*.ncb
+*.opendb
+*.opensdf
+*.sdf
+*.cachefile
+*.VC.db
+*.VC.VC.opendb
+
+# Visual Studio temporary and cache files
+ipch/
+.vs/
+*.aps
+*.ncb
+*.opendb
+*.opensdf
+*.sdf
+*.cachefile
+*.VC.db
+*.VC.VC.opendb
+*.psess
+*.vsp
+*.vspx
+*.sap
+*.e2e
+
+# ReSharper and other extensions
+_ReSharper.*/
+*.resharper
+*.dotSettings
+
+# NuGet packages
+packages/
+*.nupkg
+
+# Temporary files created by various tools
+*.bak
+*.orig
+*.swp
+*.swo
+
+# CMake build directories (if using CMake with Visual Studio)
+CMakeLists.txt.user
+CMakeCache.txt
+CMakeFiles/
+CMakeTmp/
+_CPack_Packages/
+DartConfiguration.tcl
+Testing/
+_deps/
+ExternalProjectTargets/
+install/
+Makefile
+cmake_install.cmake
+
+# Other common files to ignore
+*.DS_Store
+Thumbs.db
