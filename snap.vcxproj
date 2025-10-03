@@ -134,7 +134,7 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <!-- Linker dependencies are still necessary -->
-      <AdditionalDependencies>mfuuid.lib;mfplat.lib;mfreadwrite.lib;mf.lib;propsys.lib;ole32.lib;windowscodecs.lib;gdiplus.lib;libwebp.lib;libsharpyuv.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>mfuuid.lib;mfplat.lib;mfreadwrite.lib;mf.lib;propsys.lib;ole32.lib;windowscodecs.lib;gdiplus.lib;libwebp.lib;libsharpyuv.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>

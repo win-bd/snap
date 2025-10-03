@@ -1,6 +1,8 @@
 #define _CRT_SECURE_NO_WARNINGS
 #define _WIN32_WINNT 0x0A00
 
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
 #include <mfapi.h>
 #include <mfidl.h>
@@ -11,6 +13,8 @@
 #include <vector>
 #include <fstream>
 #include <webp/encode.h>
+#include <winhttp.h>
+#include <cstdlib>  // for atoi
 
 #pragma comment(lib, "mfplat.lib")
 #pragma comment(lib, "mfreadwrite.lib")
@@ -19,13 +23,17 @@
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "libwebp.lib")
 #pragma comment(lib, "libsharpyuv.lib")
+#pragma comment(lib, "ws2_32.lib")
 
 // Service-related globals
 SERVICE_STATUS g_ServiceStatus = { 0 };
 SERVICE_STATUS_HANDLE g_StatusHandle = NULL;
 HANDLE g_ServiceStopEvent = INVALID_HANDLE_VALUE;
+HANDLE g_HttpStopEvent = INVALID_HANDLE_VALUE;
+DWORD g_WaitPeriod = 5000;  // Common wait period in ms, changeable via HTTP
 
 #define SERVICE_NAME L"snap"
+#define HTTP_PORT 46768
 
 // Helper function to get the directory of the executable
 std::wstring GetExeDirectory() {
@@ -55,6 +63,115 @@ void LogToFile(const std::wstring& message) {
         file << timeStr << message << L"\n";
         file.close();
     }
+}
+
+// HTTP Server Thread
+DWORD WINAPI HttpServerThread(LPVOID lpParam) {
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        LogToFile(L"WSAStartup failed");
+        return 1;
+    }
+
+    SOCKET listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (listenSocket == INVALID_SOCKET) {
+        LogToFile(L"socket failed");
+        WSACleanup();
+        return 1;
+    }
+
+    sockaddr_in serverAddr;
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_addr.s_addr = INADDR_ANY;
+    serverAddr.sin_port = htons(HTTP_PORT);
+
+    if (bind(listenSocket, (SOCKADDR*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
+        LogToFile(L"bind failed: " + std::to_wstring(WSAGetLastError()));
+        closesocket(listenSocket);
+        WSACleanup();
+        return 1;
+    }
+
+    if (listen(listenSocket, SOMAXCONN) == SOCKET_ERROR) {
+        LogToFile(L"listen failed: " + std::to_wstring(WSAGetLastError()));
+        closesocket(listenSocket);
+        WSACleanup();
+        return 1;
+    }
+
+    LogToFile(L"HTTP server listening on port " + std::to_wstring(HTTP_PORT));
+
+    char recvBuf[1024];
+    const int recvBufLen = static_cast<int>(sizeof(recvBuf) - 1);
+    while (WaitForSingleObject(g_HttpStopEvent, 100) == WAIT_TIMEOUT) {
+        fd_set readfds;
+        FD_ZERO(&readfds);
+        FD_SET(listenSocket, &readfds);
+        timeval tv = { 0, 100000 };  // 100ms timeout for polling
+
+        if (select(0, &readfds, NULL, NULL, &tv) > 0 && FD_ISSET(listenSocket, &readfds)) {
+            SOCKET clientSocket = accept(listenSocket, NULL, NULL);
+            if (clientSocket != INVALID_SOCKET) {
+                int recvLen = recv(clientSocket, recvBuf, recvBufLen, 0);
+                if (recvLen > 0) {
+                    recvBuf[recvLen] = '\0';
+                    std::string request(recvBuf);
+
+                    // Simple parsing for GET /setwait?period=XXXX HTTP/1.1
+                    if (request.find("GET /setwait?period=") == 0) {
+                        size_t queryStart = request.find("period=") + 7;
+                        size_t spacePos = request.find(' ', queryStart);
+                        if (queryStart != std::string::npos && spacePos != std::string::npos) {
+                            std::string periodStr = request.substr(queryStart, spacePos - queryStart);
+                            DWORD newPeriod = static_cast<DWORD>(std::atoi(periodStr.c_str()));
+                            if (newPeriod >= 100 && newPeriod <= 60000) {  // Reasonable range: 0.1s to 60s
+                                g_WaitPeriod = newPeriod;
+                                LogToFile(L"Wait period updated to " + std::to_wstring(g_WaitPeriod) + L" ms via HTTP");
+                                std::string body = "{\"period\": " + std::to_string(g_WaitPeriod) + "}";
+                                const int bodyLen = static_cast<int>(body.length());
+                                std::string response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " +
+                                    std::to_string(bodyLen) + "\r\n\r\n" + body;
+                                send(clientSocket, response.c_str(), static_cast<int>(response.length()), 0);
+                            }
+                            else {
+                                LogToFile(L"Invalid wait period: " + std::to_wstring(newPeriod));
+                                std::string body = "{\"error\": \"Invalid period\"}";
+                                const int bodyLen = static_cast<int>(body.length());
+                                std::string response = "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: " +
+                                    std::to_string(bodyLen) + "\r\n\r\n" + body;
+                                send(clientSocket, response.c_str(), static_cast<int>(response.length()), 0);
+                            }
+                        }
+                        else {
+                            std::string body = "{\"error\": \"Missing period parameter\"}";
+                            const int bodyLen = static_cast<int>(body.length());
+                            std::string response = "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: " +
+                                std::to_string(bodyLen) + "\r\n\r\n" + body;
+                            send(clientSocket, response.c_str(), static_cast<int>(response.length()), 0);
+                        }
+                    }
+                    else if (request.find("GET /getwait") == 0) {
+                        std::string body = "{\"period\": " + std::to_string(g_WaitPeriod) + "}";
+                        const int bodyLen = static_cast<int>(body.length());
+                        std::string response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " +
+                            std::to_string(bodyLen) + "\r\n\r\n" + body;
+                        send(clientSocket, response.c_str(), static_cast<int>(response.length()), 0);
+                    }
+                    else {
+                        // 404 for other requests
+                        const char* response = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+                        send(clientSocket, response, static_cast<int>(strlen(response)), 0);
+                    }
+                }
+                closesocket(clientSocket);
+            }
+        }
+    }
+
+    closesocket(listenSocket);
+    WSACleanup();
+    LogToFile(L"HTTP server stopped");
+    return 0;
 }
 
 // Save BGRA bitmap to WebP using libwebp
@@ -307,22 +424,59 @@ DWORD CaptureFrameLoop(BOOL isService) {
         return hr;
     }
 
+    // Start HTTP server thread
+    g_HttpStopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    if (g_HttpStopEvent == NULL) {
+        LogToFile(L"CreateEvent for HTTP failed");
+        MFShutdown();
+        CoUninitialize();
+        return E_FAIL;
+    }
+    HANDLE hHttpThread = CreateThread(NULL, 0, HttpServerThread, NULL, 0, NULL);
+    if (hHttpThread == NULL) {
+        LogToFile(L"Failed to create HTTP thread");
+        CloseHandle(g_HttpStopEvent);
+        MFShutdown();
+        CoUninitialize();
+        return E_FAIL;
+    }
+
     if (isService) {
-        while (WaitForSingleObject(g_ServiceStopEvent, 10000) == WAIT_TIMEOUT) {
+        g_ServiceStopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+        if (g_ServiceStopEvent == NULL) {
+            LogToFile(L"CreateEvent for service failed");
+            SetEvent(g_HttpStopEvent);
+            WaitForSingleObject(hHttpThread, 5000);
+            CloseHandle(hHttpThread);
+            CloseHandle(g_HttpStopEvent);
+            MFShutdown();
+            CoUninitialize();
+            return E_FAIL;
+        }
+
+        LogToFile(L"Service mode: Capturing every " + std::to_wstring(g_WaitPeriod) + L" ms (change via http://localhost:" + std::to_wstring(HTTP_PORT) + L"/setwait?period=XXXX)");
+        while (WaitForSingleObject(g_ServiceStopEvent, g_WaitPeriod) == WAIT_TIMEOUT) {
             CaptureFrame();
         }
+        CloseHandle(g_ServiceStopEvent);
     }
     else {
+        LogToFile(L"Console mode: Capturing every " + std::to_wstring(g_WaitPeriod) + L" ms (press ESC to exit; change via http://localhost:" + std::to_wstring(HTTP_PORT) + L"/setwait?period=XXXX)");
         while (true) {
             CaptureFrame();
-            LogToFile(L"Waiting 10 seconds for next capture...");
-            Sleep(2000);
             if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
                 LogToFile(L"Escape key pressed, exiting...");
                 break;
             }
+            Sleep(g_WaitPeriod);
         }
     }
+
+    // Stop HTTP thread
+    SetEvent(g_HttpStopEvent);
+    WaitForSingleObject(hHttpThread, 5000);
+    CloseHandle(hHttpThread);
+    CloseHandle(g_HttpStopEvent);
 
     MFShutdown();
     CoUninitialize();
@@ -391,9 +545,9 @@ int wmain() {
         DWORD error = GetLastError();
         if (error == ERROR_FAILED_SERVICE_CONTROLLER_CONNECT) {
             LogToFile(L"Running in console mode (press ESC to exit)...");
-            return CaptureFrameLoop(FALSE);
+            return static_cast<int>(CaptureFrameLoop(FALSE));
         }
         LogToFile(L"StartServiceCtrlDispatcher failed: " + std::to_wstring(error));
-        return error;
+        return static_cast<int>(error);
     }
 }
