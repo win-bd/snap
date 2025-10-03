@@ -38,11 +38,13 @@ msbuild snap.vcxproj ^
 ## Create Service and Run
 ```
 sc create snap binPath= "C:\dev\snap\x64\Release\snap.exe" start= auto DisplayName= "Snap Service"
+sc description snap "This service runs the Snap application automatically on startup."
 sc start snap
 ```
 
 ## Status Check, Stop and Delete Service
 ```
+sc qc snap
 sc query snap
 sc stop snap
 sc delete snap
