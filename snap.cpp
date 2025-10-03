@@ -25,7 +25,7 @@ SERVICE_STATUS g_ServiceStatus = { 0 };
 SERVICE_STATUS_HANDLE g_StatusHandle = NULL;
 HANDLE g_ServiceStopEvent = INVALID_HANDLE_VALUE;
 
-#define SERVICE_NAME L"cam"
+#define SERVICE_NAME L"snap"
 
 // Helper function to get the directory of the executable
 std::wstring GetExeDirectory() {
@@ -37,7 +37,7 @@ std::wstring GetExeDirectory() {
 
 // Helper function to ensure Temp directory exists
 std::wstring EnsureTempDirectory() {
-    std::wstring tempDir = GetExeDirectory() + L"\\Temp";
+    std::wstring tempDir = GetExeDirectory() + L"\\temp";
     CreateDirectoryW(tempDir.c_str(), NULL); // Create if it doesn't exist
     return tempDir;
 }

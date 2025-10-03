@@ -71,8 +71,15 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <!-- These paths may no longer be necessary if vcpkg integration is working correctly, but are kept for safety -->
     <IncludePath>C:\Users\Amran\vcpkg\installed\x64-windows-static\include;$(IncludePath)</IncludePath>
     <LibraryPath>C:\Users\Amran\vcpkg\installed\x64-windows-static\lib;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+  <PropertyGroup Label="Vcpkg" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <VcpkgUseStatic>true</VcpkgUseStatic>
+  </PropertyGroup>
+  <PropertyGroup Label="Vcpkg">
+    <VcpkgApplocalDeps>false</VcpkgApplocalDeps>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -120,11 +127,13 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <!-- Ensure Runtime Library is set to static -->
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <!-- Linker dependencies are still necessary -->
       <AdditionalDependencies>mfuuid.lib;mfplat.lib;mfreadwrite.lib;mf.lib;propsys.lib;ole32.lib;windowscodecs.lib;gdiplus.lib;libwebp.lib;libsharpyuv.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
